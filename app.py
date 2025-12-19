@@ -69,13 +69,13 @@ st.markdown("""
     .stButton>button:hover { background-color: #1ed760; transform: scale(1.02); }
             
             # --- HIDE STREAMLIT BRANDING ---
-hide_st_style = """
+hide_st_style = ""
            
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
             header {visibility: hidden;}
         
-            """
+            ""
 st.markdown(hide_st_style, unsafe_allow_html=True)
     </style>
     """, unsafe_allow_html=True)
