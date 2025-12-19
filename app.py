@@ -11,14 +11,10 @@ if 'search_results' not in st.session_state:
 if 'fixed_recs' not in st.session_state:
     st.session_state.fixed_recs = []
 
-
-
 # --- 2. MASTER STABILITY FUNCTIONS ---
 @st.cache_resource
 def get_ytm():
     return YTMusic()
-
-
 
 def play_engine(vid_id, title, artist, playlist_ids=[]):
     """The core engine that sets the song and prepares the queue"""
@@ -35,7 +31,6 @@ def handle_mood(tag):
     results = ytm.search(tag, filter="songs")
     if results:
         st.session_state.search_results = results
-        # Prepare a list of IDs for Auto-play
         ids = [t['videoId'] for t in results]
         play_engine(results[0]['videoId'], results[0]['title'], results[0]['artists'][0]['name'], ids)
 
@@ -47,65 +42,76 @@ def handle_fav(title, artist, vid_id):
     favs = pd.read_csv(file)
     if vid_id not in favs['VideoID'].values:
         new_row = pd.DataFrame([{'Track Name': title, 'Artist Name(s)': artist, 'VideoID': vid_id}])
-        pd.concat([favs, new_row]).to_csv(file, index=False)
+        favs = pd.concat([favs, new_row], ignore_index=True)
+        favs.to_csv(file, index=False)
         st.toast(f"❤️ Saved: {title}")
 
+# --- 1. IMPROVED SEARCH LOGIC ---
 def search_and_play_logic(track, artist):
-    """Specifically for the Collection Tab to find the link then play"""
     ytm = get_ytm()
     with st.spinner(f"🔍 Finding {track}..."):
-        res = ytm.search(f"{track} {artist}", filter="songs")
+        res = ytm.search(f"{track} {artist} Official Audio", filter="songs")
         if res:
-            play_engine(res[0]['videoId'], track, artist)
+            # ONLY UPDATE THE STATE
+            st.session_state.playing = {
+                "id": res[0]['videoId'], 
+                "title": track, 
+                "artist": artist
+            }
+            # REFRESH TO SHOW THE TOP PLAYER
             st.rerun()
 
+
 # --- 3. PREMIUM UI & CSS ---
-st.set_page_config(page_title="VibeStream Ultimate Pro", layout="wide")
+st.set_page_config(page_title="VibeStream Ultimate Pro", page_icon="🎵", layout="wide")
+
+# Corrected CSS to properly hide Streamlit branding
 st.markdown("""
     <style>
     .stApp { background-color: #050505; color: white; }
     .player-card { background: #121212; padding: 25px; border-radius: 20px; border: 1px solid #333; }
     .stButton>button { width: 100%; border-radius: 25px; background-color: #1DB954; color: white; border: none; font-weight: bold; }
     .stButton>button:hover { background-color: #1ed760; transform: scale(1.02); }
-            
-            # --- HIDE STREAMLIT BRANDING ---
-hide_st_style = ""
-           
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-        
-            ""
-st.markdown(hide_st_style, unsafe_allow_html=True)
+    
+    /* HIDE STREAMLIT BRANDING */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    div[data-testid="stToolbar"] {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
 # --- 4. PERSISTENT PLAYER (WITH AUTO-PLAY NEXT) ---
+# --- 4. PERSISTENT PLAYER (FIXED FOR DUPLICATE KEYS) ---
 if st.session_state.playing["id"]:
+    # We grab the ID to create unique keys
+    current_id = st.session_state.playing["id"]
+    
     with st.container():
         st.markdown('<div class="player-card">', unsafe_allow_html=True)
         col_v, col_i = st.columns([2, 1])
         
         with col_v:
-            # AUTO-PLAY LOGIC: We embed the video as a playlist to enable auto-next
-            vid_id = st.session_state.playing["id"]
-            playlist = ",".join(st.session_state.playing["playlist"])
-            # If a playlist exists, we tell YouTube to loop through it
-            embed_url = f"https://www.youtube.com/embed/{vid_id}?autoplay=1&playlist={playlist}"
+            # We use the standard video player for better audio reliability
+            st.video(f"https://www.youtube.com/watch?v={current_id}")
             
-            st.markdown(f'<iframe width="100%" height="400" src="{embed_url}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>', unsafe_allow_html=True)
-        
         with col_i:
             st.subheader(f"🎶 {st.session_state.playing['title']}")
             st.caption(f"Artist: {st.session_state.playing['artist']}")
             
-            if st.button("❤️ Add to Favorites", key="main_fav"):
-                handle_fav(st.session_state.playing['title'], st.session_state.playing['artist'], st.session_state.playing['id'])
+            # FIXED: We use the current_id to make the key unique every time
+            if st.button("❤️ Add to Favorites", key=f"fav_{current_id}"):
+                handle_fav(
+                    st.session_state.playing['title'], 
+                    st.session_state.playing['artist'], 
+                    current_id
+                )
             
             l_query = f"{st.session_state.playing['title']} {st.session_state.playing['artist']} lyrics".replace(" ", "+")
             st.link_button("📖 View Lyrics", f"https://www.google.com/search?q={l_query}")
             
-            if st.button("⏹️ Stop Music", key="main_stop"):
+            # FIXED: Unique key for stop button as well
+            if st.button("⏹️ Stop Music", key=f"stop_{current_id}"):
                 st.session_state.playing = {"id": None, "title": "", "artist": "", "playlist": []}
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -124,17 +130,15 @@ with tabs[0]:
     
     if st.session_state.search_results:
         cols = st.columns(4)
-        # Prepare list for auto-play
         all_ids = [t['videoId'] for t in st.session_state.search_results]
         for i, track in enumerate(st.session_state.search_results[:8]):
             with cols[i % 4]:
                 st.image(track['thumbnails'][-1]['url'], use_container_width=True)
                 st.write(f"**{track['title'][:20]}**")
-                # When you play from search, it loads the rest of results into the queue
                 st.button("Play", key=f"s_{track['videoId']}", on_click=play_engine, 
                           args=(track['videoId'], track['title'], track['artists'][0]['name'], all_ids[i:]))
 
-# TAB 2: MOODS (100% Stability with Callbacks)
+# TAB 2: MOODS (100% Stability)
 with tabs[1]:
     st.write("### Select your Mood (Auto-Play Enabled)")
     mood_cols = st.columns(4)
@@ -176,12 +180,10 @@ with tabs[3]:
             for _, row in fav_df.iterrows():
                 f1, f2 = st.columns([4, 1])
                 f1.write(f"**{row['Track Name']}** — {row['Artist Name(s)']}")
-                f2.button("Play", key=f"fav_{row['VideoID']}", on_click=play_engine, 
-                          args=(row['VideoID'], row['Track Name'], row['Artist Name(s)'], []))
+                # Fixed: Use search_and_play_logic here to ensure playable IDs
+                if f2.button("Play", key=f"fav_{row['VideoID']}"):
+                    search_and_play_logic(row['Track Name'], row['Artist Name(s)'])
         else:
             st.info("No favorites yet!")
-
     else:
-        st.info("No favorites yet!")    
-
-# --- END OF APP ---
+        st.info("No favorites yet!")
