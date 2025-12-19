@@ -83,34 +83,43 @@ st.markdown("""
 
 # --- 4. PERSISTENT PLAYER (WITH AUTO-PLAY NEXT) ---
 # --- 4. PERSISTENT PLAYER (FIXED FOR DUPLICATE KEYS) ---
+# --- 4. PERSISTENT PLAYER (FIXED FOR AUTOMATIC TRANSITION) ---
 if st.session_state.playing["id"]:
-    # We grab the ID to create unique keys
     current_id = st.session_state.playing["id"]
+    # We join the playlist IDs into a comma-separated string
+    playlist_str = ",".join(st.session_state.playing["playlist"])
     
     with st.container():
         st.markdown('<div class="player-card">', unsafe_allow_html=True)
         col_v, col_i = st.columns([2, 1])
         
         with col_v:
-            # We use the standard video player for better audio reliability
-            st.video(f"https://www.youtube.com/watch?v={current_id}")
+            # ULTIMATE AUTOPLAY URL: 
+            # 1. autoplay=1 starts it immediately
+            # 2. playlist=ID1,ID2... tells YouTube what comes next
+            # 3. loop=1 ensures the playlist doesn't just stop
+            if playlist_str:
+                embed_url = f"https://www.youtube.com/embed/{current_id}?autoplay=1&playlist={playlist_str}&loop=1&rel=0"
+            else:
+                # Fallback if playing a single song from search/collection
+                embed_url = f"https://www.youtube.com/embed/{current_id}?autoplay=1&rel=0"
+            
+            st.markdown(
+                f'<iframe width="100%" height="350" src="{embed_url}" '
+                f'frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>', 
+                unsafe_allow_html=True
+            )
             
         with col_i:
             st.subheader(f"🎶 {st.session_state.playing['title']}")
             st.caption(f"Artist: {st.session_state.playing['artist']}")
             
-            # FIXED: We use the current_id to make the key unique every time
             if st.button("❤️ Add to Favorites", key=f"fav_{current_id}"):
-                handle_fav(
-                    st.session_state.playing['title'], 
-                    st.session_state.playing['artist'], 
-                    current_id
-                )
+                handle_fav(st.session_state.playing['title'], st.session_state.playing['artist'], current_id)
             
             l_query = f"{st.session_state.playing['title']} {st.session_state.playing['artist']} lyrics".replace(" ", "+")
             st.link_button("📖 View Lyrics", f"https://www.google.com/search?q={l_query}")
             
-            # FIXED: Unique key for stop button as well
             if st.button("⏹️ Stop Music", key=f"stop_{current_id}"):
                 st.session_state.playing = {"id": None, "title": "", "artist": "", "playlist": []}
                 st.rerun()
@@ -147,6 +156,8 @@ with tabs[1]:
         mood_cols[i].button(label, key=f"mood_btn_{i}", on_click=handle_mood, args=(tag,))
 
 # TAB 3: COLLECTION (Auto-Detect File)
+# --- 1. UPDATED COLLECTION TAB (TAB 3) ---
+# --- TAB 3: COLLECTION (With Autoplay) ---
 with tabs[2]:
     possible_files = ['cleaned_music.csv', 'golden_era.csv']
     found_file = next((f for f in possible_files if os.path.exists(f)), None)
@@ -162,27 +173,40 @@ with tabs[2]:
             with c_cols[i % 4]:
                 st.markdown(f"**{song.get('Track Name', 'Unknown')[:20]}**")
                 st.caption(song.get('Artist Name(s)', 'Various'))
+                # We use i (the loop index) to make the key unique
                 if st.button("Listen", key=f"coll_btn_{i}"):
-                    search_and_play_logic(song['Track Name'], song['Artist Name(s)'])
+                    ytm = get_ytm()
+                    with st.spinner("Queueing song..."):
+                        res = ytm.search(f"{song['Track Name']} {song['Artist Name(s)']} Official Audio", filter="songs")
+                        if res:
+                            current_id = res[0]['videoId']
+                            # Autoplay is enabled by passing the ID to our player engine
+                            play_engine(current_id, song['Track Name'], song['Artist Name(s)'], [])
+                            st.rerun()
         
-        if st.button("🔄 Shuffle Collection"):
+        if st.button("🔄 Shuffle Collection", key="shuff_coll"):
             st.session_state.fixed_recs = []
             st.rerun()
-    else:
-        st.error("CSV File not found! Please upload 'golden_era.csv'.")
 
-# TAB 4: FAVORITES
+# --- TAB 4: FAVORITES (Fixed Duplicate Key & Added Autoplay) ---
 with tabs[3]:
     st.subheader("Your Liked Songs")
     if os.path.exists('my_favorites.csv'):
         fav_df = pd.read_csv('my_favorites.csv')
         if not fav_df.empty:
-            for _, row in fav_df.iterrows():
+            # Create the master list of IDs for Autoplay
+            all_fav_ids = fav_df['VideoID'].tolist()
+            
+            for i, row in fav_df.iterrows():
                 f1, f2 = st.columns([4, 1])
                 f1.write(f"**{row['Track Name']}** — {row['Artist Name(s)']}")
-                # Fixed: Use search_and_play_logic here to ensure playable IDs
-                if f2.button("Play", key=f"fav_{row['VideoID']}"):
-                    search_and_play_logic(row['Track Name'], row['Artist Name(s)'])
+                
+                # FIX: We use 'i' (the row index) to ensure the key is ALWAYS unique
+                # Even if the VideoID is the same, 'i' will be different
+                if f2.button("Play", key=f"fav_btn_{row['VideoID']}_{i}"):
+                    # Passing all_fav_ids enables Autoplay for the whole list
+                    play_engine(row['VideoID'], row['Track Name'], row['Artist Name(s)'], all_fav_ids)
+                    st.rerun()
         else:
             st.info("No favorites yet!")
     else:
