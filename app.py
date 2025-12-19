@@ -11,10 +11,14 @@ if 'search_results' not in st.session_state:
 if 'fixed_recs' not in st.session_state:
     st.session_state.fixed_recs = []
 
+
+
 # --- 2. MASTER STABILITY FUNCTIONS ---
 @st.cache_resource
 def get_ytm():
     return YTMusic()
+
+
 
 def play_engine(vid_id, title, artist, playlist_ids=[]):
     """The core engine that sets the song and prepares the queue"""
@@ -63,6 +67,16 @@ st.markdown("""
     .player-card { background: #121212; padding: 25px; border-radius: 20px; border: 1px solid #333; }
     .stButton>button { width: 100%; border-radius: 25px; background-color: #1DB954; color: white; border: none; font-weight: bold; }
     .stButton>button:hover { background-color: #1ed760; transform: scale(1.02); }
+            
+            # --- HIDE STREAMLIT BRANDING ---
+hide_st_style = """
+           
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+        
+            """
+st.markdown(hide_st_style, unsafe_allow_html=True)
     </style>
     """, unsafe_allow_html=True)
 
@@ -166,3 +180,8 @@ with tabs[3]:
                           args=(row['VideoID'], row['Track Name'], row['Artist Name(s)'], []))
         else:
             st.info("No favorites yet!")
+
+    else:
+        st.info("No favorites yet!")    
+
+# --- END OF APP ---
