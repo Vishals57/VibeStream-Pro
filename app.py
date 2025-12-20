@@ -167,7 +167,7 @@ with tabs[2]:
         if not st.session_state.fixed_recs:
             st.session_state.fixed_recs = df.sample(8).to_dict('records')
         
-        st.write(f"### From Your Collection")
+        st.write(f"### From Your Collection ({found_file})")
         c_cols = st.columns(4)
         for i, song in enumerate(st.session_state.fixed_recs):
             with c_cols[i % 4]:
